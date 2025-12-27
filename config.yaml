@@ -1,0 +1,17 @@
+llm:
+  provider: "ollama" # Options: "anthropic", "openai", "ollama"
+  model: "deepseek-v3.2:cloud" # For ollama: llama3.1, mistral, etc.
+  temperature: 0.0
+  host: "http://localhost:11434" # Ollama host
+
+scraper:
+  delay_seconds: 2
+  max_retries: 3
+  start_year: 1985 # Start with single year for testing
+  end_year: 1985 # Same as start_year for testing
+
+paths:
+  raw_data: "data/raw"
+  markdown: "data/markdown"
+  extracted: "data/extracted"
+  database: "data/processed/sec_digest.duckdb"

@@ -172,3 +172,6 @@ temp/
 
 # Project specific
 # Add your project-specific ignores below
+#
+/data/
+.env
