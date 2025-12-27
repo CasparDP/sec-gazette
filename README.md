@@ -70,7 +70,7 @@ poetry install
 
 ## About This Project
 
-This project was conceived as an independent extension of research into SEC enforcement patterns. It was influenced by collaborative work with **Arndt Weinrich** on distinguishing error from intent in accounting enforcement using machine learning. The resulting dataset may be valuable for that research and other academic investigations into regulatory patterns and enforcement trends. Beyond its research potential, this project also serves as a learning exercise in exploring Claude Code's capabilities for complex, multi-phase data engineering workflows.
+This project was conceived as an independent extension of research into SEC enforcement patterns. It was influenced by collaborative work with [**Arndt Weinrich**](https://github.com/arndtupb) on distinguishing error from intent in accounting enforcement using machine learning. The resulting dataset may be valuable for that research and other academic investigations into regulatory patterns and enforcement trends. Beyond its research potential, this project also serves as a learning exercise in exploring Claude Code's capabilities for complex, multi-phase data engineering workflows.
 
 ### Related Research
 
@@ -109,7 +109,7 @@ If you use this dataset or code in your research, please cite it as follows:
 @dataset{sec_news_digest_database,
   author = {Peter, Caspar David},
   title = {SEC News Digest Historical Database (1956-2014)},
-  year = {2024},
+  year = {2025},
   url = {https://github.com/CasparDP/sec-gazette},
   license = {CC BY 4.0}
 }
@@ -118,7 +118,7 @@ If you use this dataset or code in your research, please cite it as follows:
 Or in plain text:
 
 ```
-Peter, Caspar David. (2024). SEC News Digest Historical Database (1956-2014). 
+Peter, Caspar David. (2025). SEC News Digest Historical Database (1956-2014). 
 Retrieved from https://github.com/CasparDP/sec-gazette
 ```
 
