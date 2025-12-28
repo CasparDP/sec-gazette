@@ -230,13 +230,35 @@ class SECDigestScraper:
         print("Saving manifest to database...")
         self.save_manifest_to_db(manifests)
 
+        # Filter out URLs already marked as failed (404s from previous runs)
+        print("Checking for previously failed downloads...")
+        with duckdb.connect(str(self.db_path)) as conn:
+            failed_urls = set()
+            result = conn.execute(
+                """
+                SELECT url FROM download_manifest
+                WHERE year = ? AND download_status = 'failed'
+                """,
+                [year],
+            ).fetchall()
+            failed_urls = {row[0] for row in result}
+
+        # Filter manifests to exclude already-failed URLs
+        original_count = len(manifests)
+        manifests = [m for m in manifests if m.url not in failed_urls]
+        skipped_failed = original_count - len(manifests)
+
+        if skipped_failed > 0:
+            print(f"Skipping {skipped_failed} URLs already marked as failed (404s)")
+
         # Download PDFs
         print(f"Starting downloads (max {max_concurrent} concurrent)...")
         stats = {
             "completed": 0,
             "failed": 0,
             "skipped": 0,
-            "total": len(manifests),
+            "skipped_failed": skipped_failed,
+            "total": original_count,
         }
 
         async with httpx.AsyncClient() as client:

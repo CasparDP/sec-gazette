@@ -65,6 +65,44 @@ class EnforcementActionFilter:
 class SECDigestExtractor:
     """Extract enforcement actions from SEC News Digest using LLM."""
 
+    @staticmethod
+    def _strip_markdown_tables(content: str) -> str:
+        """Remove markdown tables from content.
+
+        Tables contain irrelevant filing lists and are often garbled from OCR.
+        Enforcement actions are in prose paragraphs, not tables.
+        """
+        lines = content.split('\n')
+        filtered_lines = []
+
+        for line in lines:
+            # Skip lines that are part of markdown tables (contain | character)
+            if '|' not in line:
+                filtered_lines.append(line)
+
+        return '\n'.join(filtered_lines)
+
+    @staticmethod
+    def _clean_json_response(content: str) -> str:
+        """Clean JSON response by removing markdown code fences.
+
+        Some models wrap JSON in ```json ... ``` which breaks parsing.
+        """
+        content = content.strip()
+
+        # Remove markdown code fences
+        if content.startswith('```'):
+            # Remove opening fence (```json or just ```)
+            lines = content.split('\n')
+            if lines[0].startswith('```'):
+                lines = lines[1:]
+            # Remove closing fence
+            if lines and lines[-1].strip() == '```':
+                lines = lines[:-1]
+            content = '\n'.join(lines)
+
+        return content.strip()
+
     def __init__(
         self,
         model: str = "deepseek-v3.2:cloud",
@@ -146,6 +184,9 @@ class SECDigestExtractor:
     ) -> DigestExtraction:
         """Use LLM to extract structured data with retry logic."""
 
+        # Strip markdown tables (irrelevant filing lists, often garbled from OCR)
+        content = self._strip_markdown_tables(content)
+
         # Build extraction prompt
         prompt = self._build_extraction_prompt(content)
 
@@ -172,8 +213,10 @@ class SECDigestExtractor:
                     }
                 )
 
-                # Parse response
-                result_json = json.loads(response["message"]["content"])
+                # Parse response (clean markdown code fences first)
+                raw_content = response["message"]["content"]
+                cleaned_content = self._clean_json_response(raw_content)
+                result_json = json.loads(cleaned_content)
 
                 # Convert to Pydantic model
                 actions = [
@@ -214,6 +257,13 @@ class SECDigestExtractor:
             except (json.JSONDecodeError, ValidationError, KeyError) as e:
                 # LLM returned invalid JSON or schema mismatch - don't retry
                 last_exception = e
+                # Try to capture what the model actually returned
+                try:
+                    raw_response = response.get("message", {}).get("content", "")
+                    if raw_response:
+                        print(f"\n    Invalid JSON response (first 200 chars): {raw_response[:200]}")
+                except:
+                    pass
                 break
 
         # If we get here, all retries failed

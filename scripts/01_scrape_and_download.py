@@ -44,7 +44,9 @@ async def main():
         print(f"  Total URLs: {stats['total']}")
         print(f"  ✓ Completed: {stats['completed']}")
         print(f"  ✗ Failed: {stats['failed']}")
-        print(f"  ⊙ Skipped: {stats['skipped']}")
+        print(f"  ⊙ Skipped (already downloaded): {stats['skipped']}")
+        if stats.get('skipped_failed', 0) > 0:
+            print(f"  ⊘ Skipped (known 404s): {stats['skipped_failed']}")
 
     # Overall summary
     print(f"\n{'=' * 80}")

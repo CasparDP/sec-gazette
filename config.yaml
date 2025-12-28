@@ -7,8 +7,8 @@ llm:
 scraper:
   delay_seconds: 2
   max_retries: 3
-  start_year: 1985 # Start with single year for testing
-  end_year: 1985 # Same as start_year for testing
+  start_year: 1975 # Start with single year for testing
+  end_year: 2014 # Same as start_year for testing
 
 paths:
   raw_data: "data/raw"
