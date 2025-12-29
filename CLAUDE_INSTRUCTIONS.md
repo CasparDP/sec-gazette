@@ -91,6 +91,8 @@ Track all downloads in a DuckDB table or JSON manifest:
 }
 ```
 
+#TODO: No all years have PDFs. Until and including 2001 it is PDF. 2002-2006 it is .txt and frmo 2007 - 2014 it is .htm. Adjust download code accordingly.Also adjust parsing code accordingly. .txt may not need parsing at all. Can be read directly. .htm may need html parsing instead of pdf parsing.
+
 ## Phase 2: PDF Parsing
 
 ### Step 2.1: Docling Integration
