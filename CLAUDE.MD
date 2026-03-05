@@ -1,7 +1,6 @@
 # SEC News Digest Extraction Pipeline
 
 This file is the consolidated project guide and status reference for this repository.
-It supersedes `CLAUDE_INSTRUCTIONS.md` and `PROJECT_SUMMARY.md` as the primary implementation document.
 
 ## Project Goal
 

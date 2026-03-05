@@ -1,6 +1,8 @@
 """SEC News Digest scraper for downloading digest files."""
 
 import asyncio
+import os
+import ssl
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional, List
@@ -162,21 +164,56 @@ class SECDigestScraper:
     def _candidate_urls_for_manifest(self, manifest: DigestManifest) -> List[str]:
         """Build candidate URLs for a manifest entry.
 
-        2007 has mixed hosting/format behavior in SEC archives. For generated
-        2007 HTM URLs, fall back to TXT variants when needed.
+        Transition years are mixed in SEC archives. Candidate ordering is tuned
+        by year to improve hit rates while preserving deterministic behavior.
         """
-        candidates = [manifest.url]
+        dt = datetime.strptime(manifest.date, "%Y-%m-%d")
+        stem = f"dig{dt.strftime('%m')}{dt.strftime('%d')}{dt.strftime('%y')}"
 
-        if manifest.year == 2007 and manifest.url.endswith(".htm"):
-            filename = manifest.url.rsplit("/", 1)[-1]
-            txt_filename = filename[:-4] + ".txt"
+        year_pdf = f"{self.BASE_URL}/{manifest.year}/{stem}.pdf"
+        year_txt = f"{self.BASE_URL}/{manifest.year}/{stem}.txt"
+        year_htm = f"{self.BASE_URL}/{manifest.year}/{stem}.htm"
+        root_txt = f"{self.BASE_URL}/{stem}.txt"
+        root_htm = f"{self.BASE_URL}/{stem}.htm"
 
-            # Try same year-path TXT first, then yearless TXT path.
-            candidates.append(f"{self.BASE_URL}/{manifest.year}/{txt_filename}")
-            candidates.append(f"{self.BASE_URL}/{txt_filename}")
+        if manifest.year <= 2002:
+            candidates = [year_pdf]
+        elif 2003 <= manifest.year <= 2006:
+            candidates = [root_txt, year_txt, year_htm, root_htm]
+        elif manifest.year == 2007:
+            candidates = [year_txt, root_txt, year_htm, root_htm]
+        elif manifest.year == 2008:
+            # Early 2008 can still behave like transition content on spot checks.
+            candidates = [year_txt, root_txt, year_htm, root_htm]
+        else:
+            candidates = [year_htm, year_txt, root_txt, root_htm]
 
         # Deduplicate while preserving order.
         return list(dict.fromkeys(candidates))
+
+    def _build_ssl_verify_config(self):
+        """Build robust TLS verify config for httpx.
+
+        Some local setups export SSL_CERT_FILE/REQUESTS_CA_BUNDLE paths that no
+        longer exist (for example after deleting a virtualenv). In that case,
+        force a certifi-based SSL context to avoid startup crashes.
+        """
+        env_ca_path = os.getenv("SSL_CERT_FILE") or os.getenv("REQUESTS_CA_BUNDLE")
+        env_path_missing = bool(env_ca_path) and not Path(env_ca_path).exists()
+
+        if env_path_missing:
+            print(
+                f"Warning: CA bundle path not found: {env_ca_path}. "
+                "Falling back to certifi trust store."
+            )
+
+        try:
+            import certifi
+
+            return ssl.create_default_context(cafile=certifi.where())
+        except Exception:
+            # Fallback to httpx default behavior if certifi is unavailable.
+            return True
 
     async def download_file(
         self, manifest: DigestManifest, client: httpx.AsyncClient
@@ -308,7 +345,9 @@ class SECDigestScraper:
             "total": original_count,
         }
 
-        async with httpx.AsyncClient() as client:
+        verify_config = self._build_ssl_verify_config()
+
+        async with httpx.AsyncClient(verify=verify_config) as client:
             semaphore = asyncio.Semaphore(max_concurrent)
 
             async def download_with_semaphore(manifest):
