@@ -1,4 +1,4 @@
-"""SEC News Digest scraper for downloading PDF files."""
+"""SEC News Digest scraper for downloading digest files."""
 
 import asyncio
 from datetime import datetime, timedelta
@@ -22,7 +22,7 @@ class DigestManifest(BaseModel):
 
 
 class SECDigestScraper:
-    """Scraper for SEC News Digest PDFs."""
+    """Scraper for SEC News Digest files."""
 
     BASE_URL = "https://www.sec.gov/news/digest"
     USER_AGENT = "SEC Digest Research Project academic-research@example.com"
@@ -37,7 +37,7 @@ class SECDigestScraper:
         """Initialize the scraper.
 
         Args:
-            output_dir: Directory to save downloaded PDFs
+            output_dir: Directory to save downloaded digest files
             db_path: Path to DuckDB database for manifest
             delay_seconds: Delay between requests (default: 2)
             max_retries: Maximum retry attempts (default: 3)
@@ -69,7 +69,7 @@ class SECDigestScraper:
             """)
 
     def generate_urls_for_year(self, year: int) -> List[DigestManifest]:
-        """Generate all potential PDF URLs for a given year.
+        """Generate all potential digest URLs for a given year.
 
         SEC News Digest is published on business days (weekdays).
         We generate all dates and let the downloader handle 404s.
@@ -88,17 +88,33 @@ class SECDigestScraper:
         current_date = start_date
 
         while current_date <= end_date:
-            # Format: digMMDDYY.pdf (e.g., dig092884.pdf)
+            # Format by era:
+            # - pre-2003: digMMDDYY.pdf in /news/digest/YYYY/
+            # - 2003-2006: digMMDDYY.txt in /news/digest/
+            # - 2007+: digMMDDYY.htm in /news/digest/YYYY/
             month = current_date.strftime("%m")
             day = current_date.strftime("%d")
             year_2digit = current_date.strftime("%y")
 
-            filename = f"dig{month}{day}{year_2digit}.pdf"
-            url = f"{self.BASE_URL}/{year}/{filename}"
+            if year >= 2007:
+                extension = "htm"
+            elif year >= 2003:
+                extension = "txt"
+            else:
+                extension = "pdf"
 
-            # Create local path: data/raw/YYYY/digest_YYYY-MM-DD.pdf
+            filename = f"dig{month}{day}{year_2digit}.{extension}"
+
+            if 2003 <= year <= 2006:
+                # 2003-2006 TXT digests are served directly under /news/digest/
+                url = f"{self.BASE_URL}/{filename}"
+            else:
+                # PDF (pre-2003) and HTM (2007+) are served under year folders
+                url = f"{self.BASE_URL}/{year}/{filename}"
+
+            # Create local path: data/raw/YYYY/digest_YYYY-MM-DD.(pdf|txt|htm)
             date_str = current_date.strftime("%Y-%m-%d")
-            local_path = self.output_dir / str(year) / f"digest_{date_str}.pdf"
+            local_path = self.output_dir / str(year) / f"digest_{date_str}.{extension}"
 
             manifests.append(
                 DigestManifest(
@@ -143,13 +159,32 @@ class SECDigestScraper:
                         ],
                     )
 
-    async def download_pdf(
+    def _candidate_urls_for_manifest(self, manifest: DigestManifest) -> List[str]:
+        """Build candidate URLs for a manifest entry.
+
+        2007 has mixed hosting/format behavior in SEC archives. For generated
+        2007 HTM URLs, fall back to TXT variants when needed.
+        """
+        candidates = [manifest.url]
+
+        if manifest.year == 2007 and manifest.url.endswith(".htm"):
+            filename = manifest.url.rsplit("/", 1)[-1]
+            txt_filename = filename[:-4] + ".txt"
+
+            # Try same year-path TXT first, then yearless TXT path.
+            candidates.append(f"{self.BASE_URL}/{manifest.year}/{txt_filename}")
+            candidates.append(f"{self.BASE_URL}/{txt_filename}")
+
+        # Deduplicate while preserving order.
+        return list(dict.fromkeys(candidates))
+
+    async def download_file(
         self, manifest: DigestManifest, client: httpx.AsyncClient
     ) -> DigestManifest:
-        """Download a single PDF file.
+        """Download a single digest file.
 
         Args:
-            manifest: Manifest entry for the PDF
+            manifest: Manifest entry for the digest file
             client: HTTP client instance
 
         Returns:
@@ -168,52 +203,64 @@ class SECDigestScraper:
 
         headers = {
             "User-Agent": self.USER_AGENT,
-            "Accept": "application/pdf,*/*",
+            "Accept": "text/html,text/plain,application/pdf,*/*",
         }
+        candidate_urls = self._candidate_urls_for_manifest(manifest)
 
         for attempt in range(self.max_retries):
-            try:
-                response = await client.get(
-                    manifest.url, headers=headers, timeout=30.0, follow_redirects=True
-                )
+            last_status = None
+            last_error = None
 
-                if response.status_code == 200:
-                    # Save PDF
-                    local_path.write_bytes(response.content)
-                    manifest.download_status = "completed"
-                    manifest.file_size_bytes = len(response.content)
-                    manifest.downloaded_at = datetime.now().isoformat()
-                    return manifest
+            for request_url in candidate_urls:
+                try:
+                    response = await client.get(
+                        request_url,
+                        headers=headers,
+                        timeout=30.0,
+                        follow_redirects=True,
+                    )
 
-                elif response.status_code == 404:
-                    # Not found - likely weekend/holiday
-                    manifest.download_status = "failed"
-                    manifest.error_message = "404 Not Found (likely weekend/holiday)"
-                    return manifest
-
-                else:
-                    # Other error
-                    if attempt < self.max_retries - 1:
-                        await asyncio.sleep(self.delay_seconds * 2)
-                        continue
-                    else:
-                        manifest.download_status = "failed"
-                        manifest.error_message = f"HTTP {response.status_code}"
+                    if response.status_code == 200:
+                        # Save digest file (PDF, TXT, or HTM based on year)
+                        local_path.write_bytes(response.content)
+                        manifest.download_status = "completed"
+                        manifest.file_size_bytes = len(response.content)
+                        manifest.downloaded_at = datetime.now().isoformat()
+                        if request_url != manifest.url:
+                            manifest.error_message = f"Fallback URL used: {request_url}"
                         return manifest
 
-            except Exception as e:
-                if attempt < self.max_retries - 1:
-                    await asyncio.sleep(self.delay_seconds * 2)
-                    continue
-                else:
-                    manifest.download_status = "failed"
-                    manifest.error_message = str(e)
-                    return manifest
+                    if response.status_code == 404:
+                        # Try next candidate URL before treating as failed.
+                        continue
+
+                    # Non-404 HTTP error; retry the batch of candidates.
+                    last_status = response.status_code
+                    break
+
+                except Exception as e:
+                    last_error = str(e)
+
+            # All candidates returned 404.
+            if last_status is None and last_error is None:
+                manifest.download_status = "failed"
+                manifest.error_message = "404 Not Found (likely weekend/holiday)"
+                return manifest
+
+            if attempt < self.max_retries - 1:
+                await asyncio.sleep(self.delay_seconds * 2)
+                continue
+
+            manifest.download_status = "failed"
+            manifest.error_message = (
+                f"HTTP {last_status}" if last_status is not None else last_error
+            )
+            return manifest
 
         return manifest
 
     async def download_year(self, year: int, max_concurrent: int = 3) -> dict:
-        """Download all PDFs for a given year.
+        """Download all digest files for a given year.
 
         Args:
             year: Year to download (1956-2014)
@@ -251,7 +298,7 @@ class SECDigestScraper:
         if skipped_failed > 0:
             print(f"Skipping {skipped_failed} URLs already marked as failed (404s)")
 
-        # Download PDFs
+        # Download digest files
         print(f"Starting downloads (max {max_concurrent} concurrent)...")
         stats = {
             "completed": 0,
@@ -266,7 +313,7 @@ class SECDigestScraper:
 
             async def download_with_semaphore(manifest):
                 async with semaphore:
-                    result = await self.download_pdf(manifest, client)
+                    result = await self.download_file(manifest, client)
                     await asyncio.sleep(self.delay_seconds)
                     return result
 

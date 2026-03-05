@@ -1,4 +1,4 @@
-"""Script to scrape and download SEC News Digest PDFs."""
+"""Script to scrape and download SEC News Digest files."""
 
 import asyncio
 import sys
@@ -32,7 +32,7 @@ async def main():
         max_retries=config.scraper.max_retries,
     )
 
-    # Download PDFs for configured years
+    # Download digest files for configured years
     for year in range(config.scraper.start_year, config.scraper.end_year + 1):
         print(f"\n{'=' * 80}")
         print(f"Processing year: {year}")

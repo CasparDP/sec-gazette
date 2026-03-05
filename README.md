@@ -1,14 +1,14 @@
 # SEC News Digest Historical Database
 
 > **🚧 Work in Progress**
-> 
+>
 > This project is under active development. The initial data extraction pipeline is being built and tested. Full completion status will be announced in this README.
 
 A comprehensive extraction pipeline for building a structured database of SEC enforcement actions from historical News Digest archives (1956-2014).
 
 ## Project Overview
 
-This project aims to digitize and extract structured data from decades of SEC News Digest publications, transforming scattered PDF archives into a queryable database of enforcement actions. This dataset will support academic research on audit quality, regulatory patterns, and historical enforcement trends.
+This project aims to digitize and extract structured data from decades of SEC News Digest publications, transforming scattered digest source files (PDF, TXT, HTM) into a queryable database of enforcement actions. This dataset will support academic research on audit quality, regulatory patterns, and historical enforcement trends.
 
 ### Key Objectives
 
@@ -31,21 +31,21 @@ The extracted database includes:
 
 - **Python 3.11+** with Poetry dependency management
 - **DuckDB** for efficient data storage and querying
-- **Docling** for intelligent PDF parsing and OCR
+- **Docling** for PDF parsing and OCR, with native TXT/HTM handling in pipeline code
 - **Ollama** for local LLM-powered structured extraction
 - **Async HTTP** with httpx for respectful web scraping
 - **Pydantic** for data validation and schema enforcement
 
 ## Project Phases
 
-1. **Discovery & Download** - Scrape SEC archive index and download historical PDFs
-2. **PDF Parsing** - Convert PDFs to structured markdown using Docling
+1. **Discovery & Download** - Download historical digest source files (PDF/TXT/HTM) using SEC URL-era rules
+2. **Parsing** - Convert digest files to structured markdown (Docling for PDF, direct/HTML conversion for TXT/HTM)
 3. **LLM Extraction** - Use Ollama to extract and structure enforcement action data
 4. **Consolidation** - Validate and load data into DuckDB for analysis
 
 ## Getting Started
 
-See [CLAUDE_INSTRUCTIONS.md](./CLAUDE_INSTRUCTIONS.md) for detailed implementation specifications.
+See [CLAUDE.MD](./CLAUDE.MD) for consolidated implementation guidance, current status, and verified SEC URL/file-format rules.
 
 ### Quick Setup
 
@@ -76,13 +76,13 @@ This project was conceived as an independent extension of research into SEC enfo
 
 This work was motivated by and builds upon collaborative research:
 
-> Peter, Caspar D., and Arndt Weinrich. 2025. "Distinguishing Error from Intent in Accounting Enforcement Using LLMs." *Working Paper*.
+> Peter, Caspar D., and Arndt Weinrich. 2025. "Distinguishing Error from Intent in Accounting Enforcement Using LLMs." _Working Paper_.
 
 If you use this dataset in your own research, citations to both this repository and the related working paper are appreciated.
 
 ### AI Disclosure
 
-This project was built with the help of **Claude Code** (Anthropic's AI coding assistant). Think of it as having a really helpful colleague who never gets tired, doesn't need coffee, and occasionally suggests you name things in ways that are technically correct but slightly overcomplicated. 
+This project was built with the help of **Claude Code** (Anthropic's AI coding assistant). Think of it as having a really helpful colleague who never gets tired, doesn't need coffee, and occasionally suggests you name things in ways that are technically correct but slightly overcomplicated.
 
 While the original project concept, research objectives, and technical architecture came from the author's brain, Claude Code assisted with:
 
@@ -117,8 +117,8 @@ If you use this dataset or code in your research, please cite it as follows:
 
 Or in plain text:
 
-```
-Peter, Caspar David. (2025). SEC News Digest Historical Database (1956-2014). 
+```text
+Peter, Caspar David. (2025). SEC News Digest Historical Database (1956-2014).
 Retrieved from https://github.com/CasparDP/sec-gazette
 ```
 

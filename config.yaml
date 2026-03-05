@@ -1,6 +1,6 @@
 llm:
   provider: "ollama" # Options: "anthropic", "openai", "ollama"
-  model: "deepseek-v3.2:cloud" # For ollama: llama3.1, mistral, etc.
+  model: "qwen3.5:latest" # For ollama: llama3.1, mistral, etc.
   temperature: 0.0
   host: "http://localhost:11434" # Ollama host
 

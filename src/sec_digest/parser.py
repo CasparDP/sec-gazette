@@ -1,8 +1,10 @@
-"""PDF parsing module using docling for SEC News Digest documents."""
+"""Digest parsing module for SEC News Digest documents."""
 
 from pathlib import Path
 from typing import Optional, Dict
 from datetime import datetime
+import html
+import re
 import duckdb
 from pydantic import BaseModel
 
@@ -16,7 +18,7 @@ except ImportError as e:
 
 
 class ParsingResult(BaseModel):
-    """Result of parsing a single PDF."""
+    """Result of parsing a single digest source file."""
     pdf_path: str
     markdown_path: str
     parsing_status: str = "pending"  # pending|completed|failed
@@ -27,7 +29,7 @@ class ParsingResult(BaseModel):
 
 
 class SECDigestParser:
-    """Parser for SEC News Digest PDFs using docling."""
+    """Parser for SEC News Digest files (PDF, TXT, HTM)."""
 
     def __init__(
         self,
@@ -64,15 +66,33 @@ class SECDigestParser:
                 )
             """)
 
+    def _html_to_text(self, raw_html: str) -> str:
+        """Convert simple HTML content to plain text markdown-compatible output."""
+        # Remove script/style blocks first.
+        content = re.sub(r"<script[\\s\\S]*?</script>", "", raw_html, flags=re.IGNORECASE)
+        content = re.sub(r"<style[\\s\\S]*?</style>", "", content, flags=re.IGNORECASE)
+
+        # Insert line breaks around common block tags to preserve rough structure.
+        content = re.sub(r"</?(p|div|br|li|tr|h[1-6])[^>]*>", "\n", content, flags=re.IGNORECASE)
+
+        # Strip remaining tags and decode entities.
+        content = re.sub(r"<[^>]+>", "", content)
+        content = html.unescape(content)
+
+        # Normalize line breaks and whitespace.
+        lines = [line.strip() for line in content.splitlines()]
+        non_empty = [line for line in lines if line]
+        return "\n".join(non_empty)
+
     def parse_pdf(
         self,
         pdf_path: Path,
         year: Optional[int] = None,
     ) -> ParsingResult:
-        """Parse a single PDF file to markdown.
+        """Parse a single digest file to markdown.
 
         Args:
-            pdf_path: Path to the PDF file
+            pdf_path: Path to the digest file (.pdf, .txt, .htm)
             year: Year (for organizing output), extracted from path if not provided
 
         Returns:
@@ -82,14 +102,16 @@ class SECDigestParser:
 
         # Extract year from path if not provided
         if year is None:
-            # Path format: data/raw/YYYY/digest_YYYY-MM-DD.pdf
+            # Path format: data/raw/YYYY/digest_YYYY-MM-DD.(pdf|txt|htm)
             try:
                 year = int(pdf_path.parent.name)
             except ValueError:
-                year = "unknown"
+                year = None
 
         # Create output path: data/markdown/YYYY/digest_YYYY-MM-DD.md
-        markdown_path = self.output_dir / str(year) / pdf_path.name.replace('.pdf', '.md')
+        year_dir = str(year) if year is not None else "unknown"
+        markdown_name = pdf_path.with_suffix(".md").name
+        markdown_path = self.output_dir / year_dir / markdown_name
         markdown_path.parent.mkdir(parents=True, exist_ok=True)
 
         result = ParsingResult(
@@ -104,18 +126,31 @@ class SECDigestParser:
             return result
 
         try:
-            # Convert PDF to markdown using docling
-            conversion_result = self.converter.convert(str(pdf_path))
+            suffix = pdf_path.suffix.lower()
 
-            # Export to markdown
-            markdown_content = conversion_result.document.export_to_markdown()
+            if suffix == ".pdf":
+                # Convert PDF to markdown using docling.
+                conversion_result = self.converter.convert(str(pdf_path))
+                markdown_content = conversion_result.document.export_to_markdown()
+                result.page_count = (
+                    len(conversion_result.document.pages)
+                    if hasattr(conversion_result.document, "pages")
+                    else None
+                )
+            elif suffix == ".txt":
+                # TXT digests can be used directly as markdown content.
+                markdown_content = pdf_path.read_text(encoding="utf-8", errors="replace")
+            elif suffix in {".htm", ".html"}:
+                raw_html = pdf_path.read_text(encoding="utf-8", errors="replace")
+                markdown_content = self._html_to_text(raw_html)
+            else:
+                raise ValueError(f"Unsupported file type: {suffix}")
 
             # Save markdown file
-            markdown_path.write_text(markdown_content)
+            markdown_path.write_text(markdown_content, encoding="utf-8")
 
             # Update result
             result.parsing_status = "completed"
-            result.page_count = len(conversion_result.document.pages) if hasattr(conversion_result.document, 'pages') else None
             result.markdown_length = len(markdown_content)
             result.parsed_at = datetime.now().isoformat()
 
@@ -186,10 +221,10 @@ class SECDigestParser:
         pdf_paths: list[Path],
         show_progress: bool = True,
     ) -> Dict[str, int]:
-        """Parse multiple PDF files.
+        """Parse multiple digest files.
 
         Args:
-            pdf_paths: List of PDF file paths
+            pdf_paths: List of digest file paths
             show_progress: Whether to show progress (default: True)
 
         Returns:

@@ -1,4 +1,4 @@
-"""Script to parse all downloaded PDFs to markdown."""
+"""Script to parse all downloaded digest files to markdown."""
 
 import sys
 from pathlib import Path
@@ -28,30 +28,37 @@ def main():
         db_path=config.paths.database,
     )
 
-    # Process PDFs for configured years
+    # Process digest files for configured years
     for year in range(config.scraper.start_year, config.scraper.end_year + 1):
         print(f"\n{'=' * 80}")
         print(f"Processing year: {year}")
         print(f"{'=' * 80}")
 
-        # Find all PDFs for this year
-        pdf_dir = config.paths.raw_data / str(year)
-        if not pdf_dir.exists():
-            print(f"Directory not found: {pdf_dir}")
+        # Find all digest source files for this year
+        raw_dir = config.paths.raw_data / str(year)
+        if not raw_dir.exists():
+            print(f"Directory not found: {raw_dir}")
             continue
 
-        pdf_files = sorted(pdf_dir.glob("*.pdf"))
-        print(f"Found {len(pdf_files)} PDF files")
+        digest_files = sorted(
+            [
+                *raw_dir.glob("*.pdf"),
+                *raw_dir.glob("*.txt"),
+                *raw_dir.glob("*.htm"),
+                *raw_dir.glob("*.html"),
+            ]
+        )
+        print(f"Found {len(digest_files)} digest files")
 
-        if not pdf_files:
-            print("No PDFs to process")
+        if not digest_files:
+            print("No digest files to process")
             continue
 
         # Parse batch
-        stats = parser.parse_batch(pdf_files, show_progress=True)
+        stats = parser.parse_batch(digest_files, show_progress=True)
 
         print(f"\nYear {year} Summary:")
-        print(f"  Total PDFs: {stats['total']}")
+        print(f"  Total files: {stats['total']}")
         print(f"  ✓ Completed: {stats['completed']}")
         print(f"  ✗ Failed: {stats['failed']}")
         print(f"  ⊙ Skipped: {stats['skipped']}")
