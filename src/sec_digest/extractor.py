@@ -105,7 +105,7 @@ class SECDigestExtractor:
 
     def __init__(
         self,
-        model: str = "deepseek-v3.2:cloud",
+        model: str = "qwen3.5:27B",
         ollama_host: str = "http://localhost:11434",
         max_retries: int = 5,
         initial_retry_delay: float = 2.0,
@@ -292,6 +292,7 @@ Focus on these sections:
 - ADMINISTRATIVE PROCEEDINGS
 - CIVIL PROCEEDINGS
 - CRIMINAL PROCEEDINGS
+- ENFORCEMENT PROCEEDINGS
 
 Extract ONLY information from these enforcement action sections. Ignore other sections like "Investment Company Act Releases", "Securities Act Registrations", etc."""
 

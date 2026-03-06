@@ -1,6 +1,6 @@
 llm:
   provider: "ollama" # Options: "anthropic", "openai", "ollama"
-  model: "qwen3.5:latest" # For ollama: llama3.1, mistral, etc.
+  model: "qwen3.5:27B" # For ollama: llama3.1, mistral, etc.
   temperature: 0.0
   host: "http://localhost:11434" # Ollama host
 
@@ -8,7 +8,7 @@ scraper:
   delay_seconds: 2
   max_retries: 3
   start_year: 1956 # Start with single year for testing
-  end_year: 1975 # Same as start_year for testing
+  end_year: 2013 # Same as start_year for testing
 
 paths:
   raw_data: "data/raw"

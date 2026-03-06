@@ -20,8 +20,8 @@ class ScraperConfig(BaseModel):
     """Web scraper configuration."""
     delay_seconds: int = Field(default=2, ge=1)
     max_retries: int = Field(default=3, ge=1)
-    start_year: int = Field(default=1985, ge=1956, le=2014)
-    end_year: int = Field(default=1985, ge=1956, le=2014)
+    start_year: int = Field(default=1956, ge=1956, le=2014)
+    end_year: int = Field(default=2014, ge=1956, le=2014)
 
 
 class PathsConfig(BaseModel):
