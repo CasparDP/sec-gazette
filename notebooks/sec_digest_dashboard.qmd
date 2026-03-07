@@ -1,0 +1,398 @@
+---
+title: "SEC News Digest — Enforcement Actions"
+subtitle: "Historical enforcement data extracted from SEC News Digest archives (1956–2014)"
+format:
+  dashboard:
+    theme: cosmo
+    nav-buttons:
+      - icon: github
+        href: https://github.com/CasparDP
+    scrolling: true
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r setup}
+library(tidyverse)
+library(duckdb)
+library(plotly)
+library(DT)
+library(scales)
+library(lubridate)
+
+# Connect to DuckDB (read-only)
+db_path <- here::here("data/processed/sec_digest.duckdb")
+con <- dbConnect(duckdb(), dbdir = db_path, read_only = TRUE)
+
+# Helper: check if table exists
+table_exists <- function(con, name) {
+  name %in% dbListTables(con)
+}
+
+has_enforcement_data <- all(
+  c("enforcement_actions", "respondents", "sanctions", "violations") %in%
+    dbListTables(con)
+)
+```
+
+# Overview
+
+## Row {height=20%}
+
+```{r value-boxes}
+#| content: valuebox
+#| title: "Total Actions"
+if (has_enforcement_data) {
+  n_actions <- tbl(con, "enforcement_actions") |> count() |> pull(n)
+} else {
+  n_actions <- "—"
+}
+list(icon = "shield-exclamation", color = "primary", value = n_actions)
+```
+
+```{r}
+#| content: valuebox
+#| title: "Digests Parsed"
+n_parsed <- tbl(con, "parsing_results") |>
+  filter(parsing_status == "completed") |>
+  count() |> pull(n)
+list(icon = "file-earmark-text", color = "success", value = n_parsed)
+```
+
+```{r}
+#| content: valuebox
+#| title: "Unique Respondents"
+if (has_enforcement_data) {
+  n_resp <- tbl(con, "respondents") |>
+    summarise(n = n_distinct(name)) |> pull(n)
+} else {
+  n_resp <- "—"
+}
+list(icon = "people", color = "warning", value = n_resp)
+```
+
+```{r}
+#| content: valuebox
+#| title: "Settlement Rate"
+if (has_enforcement_data) {
+  rate <- tbl(con, "enforcement_actions") |>
+    summarise(
+      settled   = sum(as.integer(settlement == TRUE), na.rm = TRUE),
+      total     = sum(as.integer(!is.na(settlement)))
+    ) |>
+    collect() |>
+    mutate(rate = if_else(total > 0, percent(settled / total, accuracy = 1), "—")) |>
+    pull(rate)
+} else {
+  rate <- "—"
+}
+list(icon = "handshake", color = "info", value = rate)
+```
+
+## Row {height=80%}
+
+### Col {width=60%}
+
+```{r actions-over-time}
+#| title: "Enforcement Actions Over Time"
+if (has_enforcement_data) {
+  actions_by_month <- tbl(con, "enforcement_actions") |>
+    mutate(month = floor_date(digest_date, "month")) |>
+    count(month) |>
+    collect() |>
+    mutate(month = as.Date(month))
+
+  p <- ggplot(actions_by_month, aes(x = month, y = n)) +
+    geom_line(color = "#0d6efd", linewidth = 0.8) +
+    geom_smooth(method = "loess", se = FALSE, color = "#dc3545",
+                linewidth = 0.5, linetype = "dashed") +
+    scale_x_date(date_breaks = "1 year", date_labels = "%Y") +
+    scale_y_continuous(labels = comma) +
+    labs(x = NULL, y = "Actions per month") +
+    theme_minimal(base_size = 12) +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+  ggplotly(p, tooltip = c("x", "y")) |>
+    layout(hovermode = "x unified")
+} else {
+  plotly_empty() |>
+    layout(
+      title = list(text = "No enforcement data loaded yet", x = 0.5),
+      annotations = list(
+        text = "Run scripts 04 and 05 to extract and load enforcement actions.",
+        xref = "paper", yref = "paper", x = 0.5, y = 0.5,
+        showarrow = FALSE, font = list(size = 14)
+      )
+    )
+}
+```
+
+### Col {width=40%}
+
+```{r action-type-donut}
+#| title: "Action Types"
+if (has_enforcement_data) {
+  action_types <- tbl(con, "enforcement_actions") |>
+    count(action_type) |>
+    collect()
+
+  plot_ly(
+    action_types,
+    labels = ~str_to_title(action_type),
+    values = ~n,
+    type   = "pie",
+    hole   = 0.45,
+    marker = list(colors = c("#0d6efd", "#198754", "#dc3545")),
+    textinfo = "label+percent",
+    hovertemplate = "%{label}: %{value} actions<extra></extra>"
+  ) |>
+    layout(showlegend = TRUE,
+           legend = list(orientation = "h", y = -0.1))
+} else {
+  plotly_empty() |> layout(title = list(text = "No data yet"))
+}
+```
+
+# Respondents & Sanctions
+
+## Row
+
+### Col {width=50%}
+
+```{r sanction-types}
+#| title: "Sanction Types"
+if (has_enforcement_data) {
+  sanctions_summary <- tbl(con, "sanctions") |>
+    filter(!is.na(sanction_type)) |>
+    count(sanction_type, sort = TRUE) |>
+    collect() |>
+    mutate(
+      sanction_type = str_replace_all(sanction_type, "_", " ") |> str_to_title(),
+      sanction_type = fct_reorder(sanction_type, n)
+    )
+
+  p <- ggplot(sanctions_summary, aes(x = n, y = sanction_type,
+                                      text = paste0(sanction_type, ": ", n))) +
+    geom_col(fill = "#0d6efd", width = 0.7) +
+    scale_x_continuous(labels = comma) +
+    labs(x = "Count", y = NULL) +
+    theme_minimal(base_size = 12)
+
+  ggplotly(p, tooltip = "text")
+} else {
+  plotly_empty() |> layout(title = list(text = "No data yet"))
+}
+```
+
+### Col {width=50%}
+
+```{r entity-types}
+#| title: "Respondent Types"
+if (has_enforcement_data) {
+  entity_summary <- tbl(con, "respondents") |>
+    mutate(entity_type = coalesce(entity_type, "unknown")) |>
+    count(entity_type, sort = TRUE) |>
+    collect() |>
+    mutate(entity_type = str_to_title(entity_type))
+
+  plot_ly(
+    entity_summary,
+    labels = ~entity_type,
+    values = ~n,
+    type   = "pie",
+    hole   = 0.4,
+    marker = list(colors = c("#0d6efd", "#ffc107", "#6c757d")),
+    textinfo = "label+percent",
+    hovertemplate = "%{label}: %{value}<extra></extra>"
+  ) |>
+    layout(showlegend = TRUE,
+           legend = list(orientation = "h", y = -0.1))
+} else {
+  plotly_empty() |> layout(title = list(text = "No data yet"))
+}
+```
+
+## Row
+
+```{r top-respondents-table}
+#| title: "Top Respondents (by action count)"
+if (has_enforcement_data) {
+  top_resp <- tbl(con, "respondents") |>
+    count(name, entity_type, sort = TRUE) |>
+    collect() |>
+    rename(
+      Respondent   = name,
+      Type         = entity_type,
+      Actions      = n
+    ) |>
+    mutate(Type = coalesce(Type, "unknown") |> str_to_title()) |>
+    head(100)
+
+  datatable(
+    top_resp,
+    rownames    = FALSE,
+    filter      = "top",
+    extensions  = "Buttons",
+    options     = list(
+      pageLength = 15,
+      dom        = "Bfrtip",
+      buttons    = c("csv", "excel"),
+      scrollX    = TRUE
+    )
+  )
+} else {
+  cat("No enforcement data loaded yet. Run scripts 04 and 05 first.")
+}
+```
+
+# Violations
+
+## Row
+
+### Col {width=60%}
+
+```{r top-statutes}
+#| title: "Most-Cited Statutes"
+if (has_enforcement_data) {
+  statutes <- tbl(con, "violations") |>
+    filter(!is.na(statute)) |>
+    count(statute, sort = TRUE) |>
+    collect() |>
+    head(20) |>
+    mutate(statute = fct_reorder(statute, n))
+
+  p <- ggplot(statutes, aes(x = n, y = statute,
+                             text = paste0(statute, ": ", n, " citations"))) +
+    geom_col(fill = "#198754", width = 0.7) +
+    scale_x_continuous(labels = comma) +
+    labs(x = "Citations", y = NULL) +
+    theme_minimal(base_size = 11)
+
+  ggplotly(p, tooltip = "text")
+} else {
+  plotly_empty() |> layout(title = list(text = "No data yet"))
+}
+```
+
+### Col {width=40%}
+
+```{r settlements-by-type}
+#| title: "Settlement Rate by Action Type"
+if (has_enforcement_data) {
+  settle_by_type <- tbl(con, "enforcement_actions") |>
+    filter(!is.na(settlement)) |>
+    count(action_type, settlement) |>
+    collect() |>
+    group_by(action_type) |>
+    mutate(pct = n / sum(n)) |>
+    filter(settlement == TRUE) |>
+    mutate(action_type = str_to_title(action_type))
+
+  p <- ggplot(settle_by_type,
+              aes(x = action_type, y = pct,
+                  text = paste0(action_type, ": ", percent(pct, accuracy = 1)))) +
+    geom_col(fill = "#0d6efd", width = 0.5) +
+    scale_y_continuous(labels = percent_format(accuracy = 1), limits = c(0, 1)) +
+    labs(x = NULL, y = "Settlement rate") +
+    theme_minimal(base_size = 12)
+
+  ggplotly(p, tooltip = "text")
+} else {
+  plotly_empty() |> layout(title = list(text = "No data yet"))
+}
+```
+
+# Pipeline Coverage
+
+## Row {height=25%}
+
+```{r coverage-boxes}
+#| content: valuebox
+#| title: "Files Downloaded"
+n_downloaded <- tbl(con, "download_manifest") |>
+  filter(download_status == "completed") |>
+  count() |> pull(n)
+list(icon = "download", color = "success", value = scales::comma(n_downloaded))
+```
+
+```{r}
+#| content: valuebox
+#| title: "Years in Manifest"
+n_years <- tbl(con, "download_manifest") |>
+  summarise(n = n_distinct(year)) |> pull(n)
+list(icon = "calendar-range", color = "primary", value = n_years)
+```
+
+```{r}
+#| content: valuebox
+#| title: "Parse Failures"
+n_failed <- tbl(con, "parsing_results") |>
+  filter(parsing_status == "failed") |>
+  count() |> pull(n)
+list(icon = "exclamation-triangle", color = if (n_failed > 0) "danger" else "success",
+     value = n_failed)
+```
+
+## Row {height=75%}
+
+### Col
+
+```{r coverage-heatmap}
+#| title: "Download Coverage by Year"
+coverage <- tbl(con, "download_manifest") |>
+  count(year, download_status) |>
+  collect() |>
+  group_by(year) |>
+  mutate(total = sum(n), pct = n / total) |>
+  filter(download_status == "completed") |>
+  mutate(coverage_pct = pct)
+
+p <- ggplot(coverage, aes(x = year, y = coverage_pct,
+                           text = paste0(year, ": ", percent(coverage_pct, accuracy = 1),
+                                         " (", n, "/", total, " files)"))) +
+  geom_col(aes(fill = coverage_pct), width = 0.8) +
+  scale_fill_gradient(low = "#ffc107", high = "#198754",
+                      labels = percent_format(), name = "Coverage") +
+  scale_x_continuous(breaks = seq(1956, 2014, 5)) +
+  scale_y_continuous(labels = percent_format()) +
+  labs(x = "Year", y = "Download success rate") +
+  theme_minimal(base_size = 12) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "right")
+
+ggplotly(p, tooltip = "text") |>
+  layout(hovermode = "closest")
+```
+
+### Col
+
+```{r parse-quality}
+#| title: "Parsing Quality by Year"
+parse_by_year <- tbl(con, "parsing_results") |>
+  left_join(tbl(con, "download_manifest") |> select(local_path, year),
+            by = c("pdf_path" = "local_path")) |>
+  filter(!is.na(year)) |>
+  count(year, parsing_status) |>
+  collect() |>
+  group_by(year) |>
+  mutate(total = sum(n), pct = n / total) |>
+  filter(parsing_status == "completed")
+
+p <- ggplot(parse_by_year, aes(x = year, y = pct,
+                                text = paste0(year, ": ", percent(pct, accuracy = 1)))) +
+  geom_line(color = "#0d6efd", linewidth = 0.8) +
+  geom_point(color = "#0d6efd", size = 2) +
+  scale_x_continuous(breaks = seq(1956, 2014, 5)) +
+  scale_y_continuous(labels = percent_format(), limits = c(0, 1)) +
+  labs(x = "Year", y = "Parse success rate") +
+  theme_minimal(base_size = 12) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+ggplotly(p, tooltip = "text")
+```
+
+```{r cleanup}
+dbDisconnect(con)
+```

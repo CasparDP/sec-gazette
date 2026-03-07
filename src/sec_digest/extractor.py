@@ -84,24 +84,55 @@ class SECDigestExtractor:
 
     @staticmethod
     def _clean_json_response(content: str) -> str:
-        """Clean JSON response by removing markdown code fences.
+        """Clean JSON response for parsing.
 
-        Some models wrap JSON in ```json ... ``` which breaks parsing.
+        Handles:
+        - Markdown code fences (```json ... ```)
+        - <think>...</think> blocks emitted by reasoning models
+        - Trailing text after the closing } (Extra data)
         """
         content = content.strip()
 
+        # Strip <think>...</think> blocks (reasoning models like DeepSeek, minimax)
+        content = re.sub(r'<think>.*?</think>', '', content, flags=re.DOTALL).strip()
+
         # Remove markdown code fences
         if content.startswith('```'):
-            # Remove opening fence (```json or just ```)
             lines = content.split('\n')
             if lines[0].startswith('```'):
                 lines = lines[1:]
-            # Remove closing fence
             if lines and lines[-1].strip() == '```':
                 lines = lines[:-1]
             content = '\n'.join(lines)
 
-        return content.strip()
+        content = content.strip()
+
+        # Extract just the first top-level JSON object, discarding trailing content.
+        # This handles models that append commentary after the closing }.
+        if content.startswith('{'):
+            depth = 0
+            in_string = False
+            escape_next = False
+            for i, ch in enumerate(content):
+                if escape_next:
+                    escape_next = False
+                    continue
+                if ch == '\\' and in_string:
+                    escape_next = True
+                    continue
+                if ch == '"':
+                    in_string = not in_string
+                    continue
+                if in_string:
+                    continue
+                if ch == '{':
+                    depth += 1
+                elif ch == '}':
+                    depth -= 1
+                    if depth == 0:
+                        return content[:i + 1]
+
+        return content
 
     def __init__(
         self,

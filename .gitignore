@@ -175,3 +175,11 @@ temp/
 #
 /data/
 .env
+
+/.quarto/
+**/*.quarto_ipynb
+
+# Keep Quarto source files in git
+!/_quarto.yml
+!/notebooks/
+!/notebooks/**/*.qmd

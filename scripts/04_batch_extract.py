@@ -1,9 +1,18 @@
-"""Batch extraction script for enforcement actions."""
+"""Batch extraction script for enforcement actions.
+
+Usage:
+    poetry run python scripts/04_batch_extract.py                  # all years, all files
+    poetry run python scripts/04_batch_extract.py --limit 20       # first 20 per year
+    poetry run python scripts/04_batch_extract.py --year 2000      # single year
+    poetry run python scripts/04_batch_extract.py --year 2000 --limit 5
+"""
 
 import sys
 import json
+import argparse
 from pathlib import Path
 from datetime import datetime
+from typing import Optional
 
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -12,80 +21,61 @@ from src.sec_digest.config import Config
 from src.sec_digest.extractor import SECDigestExtractor, EnforcementActionFilter
 
 
-def main(limit: int = None):
-    """Run batch extraction.
+def process_year(year: int, extractor, config, limit: Optional[int] = None) -> dict:
+    """Extract enforcement actions for all markdown files in a given year.
 
-    Args:
-        limit: Maximum number of documents to process (None = all)
+    Skips files that already have a corresponding JSON output.
     """
-    print("=" * 80)
-    print("SEC Digest Batch Extraction")
-    print("=" * 80)
+    markdown_dir = config.paths.markdown / str(year)
+    if not markdown_dir.exists():
+        print(f"  No markdown directory for {year}, skipping.")
+        return {"total": 0, "skipped": 0, "processed": 0, "with_actions": 0, "total_actions": 0, "errors": 0}
 
-    # Load configuration
-    config = Config.load()
-    config.ensure_directories()
-
-    # Initialize extractor
-    extractor = SECDigestExtractor(
-        model=config.llm.model,
-        ollama_host=config.llm.host
-    )
-
-    # Get all markdown files
-    markdown_dir = config.paths.markdown / "1985"
     all_files = sorted(markdown_dir.glob("*.md"))
+    output_dir = config.paths.extracted / str(year)
+    output_dir.mkdir(parents=True, exist_ok=True)
 
-    print(f"Total markdown files: {len(all_files)}")
+    print(f"  Found {len(all_files)} markdown files")
 
-    # Pre-filter to find documents with enforcement actions
-    print("\nPre-filtering documents...")
-    filtered_files = []
+    # Pre-filter: enforcement sections present + not already processed
+    pending = []
+    n_skipped = 0
     for md_file in all_files:
+        output_file = output_dir / f"{md_file.stem}.json"
+        if output_file.exists():
+            n_skipped += 1
+            continue
         content = md_file.read_text()
         has_actions, _ = EnforcementActionFilter.has_enforcement_actions(content)
         if has_actions:
-            filtered_files.append(md_file)
+            pending.append(md_file)
 
-    print(f"Documents with enforcement actions: {len(filtered_files)}")
+    print(f"  Already processed (skipped): {n_skipped}")
+    print(f"  With enforcement sections: {len(pending)}")
 
-    # Apply limit if specified
-    if limit:
-        filtered_files = filtered_files[:limit]
-        print(f"Processing first {limit} documents")
+    if limit is not None:
+        pending = pending[:limit]
+        print(f"  Applying --limit: processing first {len(pending)}")
 
-    print(f"\nStarting extraction...")
-    print(f"Model: {config.llm.model}")
-    print(f"Output: {config.paths.extracted}")
-    print()
-
-    # Process each file
-    results = []
     stats = {
-        "total": len(filtered_files),
+        "total": len(pending),
+        "skipped": n_skipped,
         "processed": 0,
         "with_actions": 0,
         "total_actions": 0,
         "errors": 0,
     }
 
-    start_time = datetime.now()
-
-    for i, md_file in enumerate(filtered_files, 1):
-        print(f"[{i}/{len(filtered_files)}] {md_file.name}...", end=" ", flush=True)
-
+    results = []
+    for i, md_file in enumerate(pending, 1):
+        print(f"  [{i}/{len(pending)}] {md_file.name}...", end=" ", flush=True)
+        output_file = output_dir / f"{md_file.stem}.json"
         try:
-            # Extract
             result = extractor.extract_from_file(md_file)
-
-            # Save individual result as JSON
-            output_file = config.paths.extracted / "1985" / f"{md_file.stem}.json"
-            output_file.parent.mkdir(parents=True, exist_ok=True)
 
             with open(output_file, "w") as f:
                 json.dump(result.model_dump(mode="json"), f, indent=2, default=str)
 
-            # Update stats
             stats["processed"] += 1
             if result.has_enforcement_actions:
                 stats["with_actions"] += 1
@@ -98,44 +88,62 @@ def main(limit: int = None):
             print(f"✗ Error: {e}")
             stats["errors"] += 1
 
+    return stats
+
+
+def main():
+    parser = argparse.ArgumentParser(description="SEC Digest batch extraction")
+    parser.add_argument("--year", type=int, default=None,
+                        help="Process a single year (default: all years in config range)")
+    parser.add_argument("--limit", type=int, default=None,
+                        help="Max files to process per year (default: all)")
+    args = parser.parse_args()
+
+    print("=" * 80)
+    print("SEC Digest Batch Extraction")
+    print("=" * 80)
+
+    config = Config.load()
+    config.ensure_directories()
+
+    extractor = SECDigestExtractor(
+        model=config.llm.model,
+        ollama_host=config.llm.host,
+    )
+
+    print(f"Model:    {config.llm.model}")
+    print(f"Output:   {config.paths.extracted}")
+    if args.limit:
+        print(f"Limit:    {args.limit} files per year")
+
+    years = [args.year] if args.year else range(config.scraper.start_year, config.scraper.end_year + 1)
+
+    totals = {"skipped": 0, "processed": 0, "with_actions": 0, "total_actions": 0, "errors": 0}
+    start_time = datetime.now()
+
+    for year in years:
+        print(f"\n{'=' * 80}")
+        print(f"Year: {year}")
+        print(f"{'=' * 80}")
+        stats = process_year(year, extractor, config, limit=args.limit)
+        for k in totals:
+            totals[k] += stats.get(k, 0)
+
     elapsed = datetime.now() - start_time
 
-    # Summary
-    print("\n" + "=" * 80)
-    print("Extraction Complete")
-    print("=" * 80)
-    print(f"Total processed: {stats['processed']}")
-    print(f"Documents with actions: {stats['with_actions']}")
-    print(f"Total actions extracted: {stats['total_actions']}")
-    print(f"Errors: {stats['errors']}")
-    print(f"Time elapsed: {elapsed}")
-    print(f"Average per document: {elapsed / stats['processed'] if stats['processed'] > 0 else 0}")
-
-    # Action type breakdown
-    if results:
-        print("\nAction Type Breakdown:")
-        action_types = {"administrative": 0, "civil": 0, "criminal": 0}
-        for result in results:
-            for action in result.actions:
-                action_types[action.action_type] += 1
-
-        for action_type, count in action_types.items():
-            print(f"  {action_type.capitalize()}: {count}")
-
-    # Sample extractions
-    print("\nSample Extractions:")
-    for result in results[:3]:
-        print(f"\n  {result.digest_date}:")
-        for action in result.actions[:2]:  # Show first 2 actions per document
-            print(f"    - {action.action_type}: {action.title}")
-            if action.respondents:
-                print(f"      Respondents: {', '.join(r.name for r in action.respondents[:3])}")
-
-    print("\n" + "=" * 80)
-    print(f"Results saved to: {config.paths.extracted / '1985'}")
-    print("=" * 80)
+    print(f"\n{'=' * 80}")
+    print("Summary")
+    print(f"{'=' * 80}")
+    print(f"  Skipped (already done): {totals['skipped']}")
+    print(f"  Processed:              {totals['processed']}")
+    print(f"  With actions:           {totals['with_actions']}")
+    print(f"  Total actions:          {totals['total_actions']}")
+    print(f"  Errors:                 {totals['errors']}")
+    print(f"  Time elapsed:           {elapsed}")
+    if totals["processed"] > 0:
+        avg = elapsed / totals["processed"]
+        print(f"  Avg per document:       {avg}")
 
 
 if __name__ == "__main__":
-    # Process first 10 documents
-    main(limit=10)
+    main()
