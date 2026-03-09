@@ -104,7 +104,8 @@ Key fields:
 
 Notes:
 
-- Existing local files are marked `skipped`.
+- `download_status` semantics: `completed` = downloaded this run, `skipped` = already on disk (prior run), `failed` = HTTP 404 (weekend/holiday, SEC did not publish — ~30% of dates, expected).
+- Queries for "files available" must filter `download_status IN ('completed', 'skipped')`. Filtering on `completed` alone gives wrong counts.
 - Previous failed URLs are skipped in later runs.
 - When 2007 fallback succeeds, `error_message` stores which fallback URL was used.
 
@@ -118,6 +119,28 @@ poetry run python scripts/02_parse_pdfs.py
 poetry run python scripts/03_test_extraction.py
 poetry run python scripts/04_batch_extract.py
 poetry run python scripts/05_load_to_duckdb.py
+```
+
+Script CLI flags:
+
+```bash
+poetry run python scripts/04_batch_extract.py --year 2000 --limit 20   # single year, capped
+poetry run python scripts/05_load_to_duckdb.py --year 2000             # incremental load
+poetry run python scripts/05_load_to_duckdb.py --full-reload           # wipe + reload all
+```
+
+Parse a subset inline without modifying scripts:
+
+```bash
+poetry run python -c "
+import sys; sys.path.insert(0, '.')
+from src.sec_digest.config import Config
+from src.sec_digest.parser import SECDigestParser
+config = Config.load()
+parser = SECDigestParser(output_dir=config.paths.markdown, db_path=config.paths.database)
+files = sorted((config.paths.raw_data / '2000').glob('*.pdf'))[:20]
+parser.parse_batch(files, show_progress=True)
+"
 ```
 
 Single-file extraction debug:
@@ -142,6 +165,20 @@ Expected key groups:
 - Retry logic is implemented for transient request failures.
 - OCR quality in older documents can reduce extraction fidelity.
 - Markdown cleanup and extraction guardrails are important for hallucination control.
+
+## LLM Extraction Notes
+
+- Ollama Cloud: use model name suffix `:cloud` (e.g. `minimax-m2.5:cloud`); set `OLLAMA_API_KEY`; extractor auto-routes to `https://ollama.com`.
+- Some models (reasoning/cloud) emit `<think>...</think>` blocks or trailing text after JSON — `extractor._clean_json_response` handles both.
+- `JSONDecodeError: Extra data` = model appended text after closing `}` — fixed in extractor, not a retryable error.
+
+## Dashboard (Quarto)
+
+- Source: `notebooks/sec_digest_dashboard.qmd`; renders to `docs/notebooks/sec_digest_dashboard.html`.
+- Render command: `quarto render notebooks/sec_digest_dashboard.qmd`
+- `docs/index.html` redirects to the dashboard for GitHub Pages hosting.
+- R packages confirmed installed: duckdb, tidyverse, plotly, DT, ggplot2, scales, lubridate; Quarto 1.8.27.
+- Stack: tidyverse + plotly (interactive charts) + DT (filterable tables) — all render as self-contained HTML, no server needed.
 
 ## Near-Term Priorities
 
