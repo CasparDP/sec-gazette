@@ -183,3 +183,7 @@ temp/
 !/_quarto.yml
 !/notebooks/
 !/notebooks/**/*.qmd
+
+# Exclude paper files
+/paper/
+/paper/references.bib
