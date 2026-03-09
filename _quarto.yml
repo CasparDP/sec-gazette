@@ -1,6 +1,15 @@
 project:
   type: website
   output-dir: docs
+  render:
+    - index.qmd
+    - notebooks/sec_digest_dashboard.qmd
 
 website:
   title: "SEC Gazette"
+  navbar:
+    left:
+      - href: index.qmd
+        text: Home
+      - href: notebooks/sec_digest_dashboard.qmd
+        text: Dashboard

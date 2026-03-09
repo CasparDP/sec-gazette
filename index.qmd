@@ -1,0 +1,19 @@
+---
+title: "SEC News Digest — Enforcement Actions"
+about:
+  template: trestles # Professional sidebar layout
+  image-width: 15em
+  image-shape: round
+  links:
+    - icon: github
+      text: GitHub
+      href: https://github.com/CasparDP
+format:
+  html:
+    page-layout: full
+---
+
+## Welcome
+You can find our work on analyzing SEC enforcement actions. Check out our [dashboard](notebooks/sec_digest_dashboard.qmd) for interactive insights!
+
+This is site will be looking better soon!
