@@ -1,7 +1,7 @@
 """Pydantic schemas for structured extraction from SEC News Digest."""
 
 from datetime import date
-from typing import Optional, List, Literal
+from typing import Optional, List
 from pydantic import BaseModel, Field
 
 
@@ -9,7 +9,7 @@ class Entity(BaseModel):
     """An entity involved in an enforcement action."""
 
     name: str = Field(description="Full name of the entity (person or company)")
-    entity_type: Optional[Literal["individual", "company", "other"]] = Field(
+    entity_type: Optional[str] = Field(
         default=None,
         description="Type of entity"
     )
@@ -35,12 +35,9 @@ class Violation(BaseModel):
 class Sanction(BaseModel):
     """Sanction or penalty imposed."""
 
-    sanction_type: Optional[Literal[
-        "suspension", "revocation", "injunction", "fine",
-        "imprisonment", "disgorgement", "cease_and_desist", "other"
-    ]] = Field(default=None, description="Type of sanction")
+    sanction_type: Optional[str] = Field(default=None, description="Type of sanction")
 
-    description: str = Field(description="Description of the sanction imposed")
+    description: Optional[str] = Field(default=None, description="Description of the sanction imposed")
 
     duration: Optional[str] = Field(
         default=None,
@@ -57,7 +54,7 @@ class EnforcementAction(BaseModel):
     """A single enforcement action extracted from SEC News Digest."""
 
     # Metadata
-    action_type: Literal["administrative", "civil", "criminal"] = Field(
+    action_type: str = Field(
         description="Type of enforcement proceeding"
     )
 

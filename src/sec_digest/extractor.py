@@ -292,7 +292,8 @@ class SECDigestExtractor:
                 try:
                     raw_response = response.get("message", {}).get("content", "")
                     if raw_response:
-                        print(f"\n    Invalid JSON response (first 200 chars): {raw_response[:200]}")
+                        print(f"\n    Parse/validation error ({type(e).__name__}: {e})")
+                        print(f"    Response (first 200 chars): {raw_response[:200]}")
                 except:
                     pass
                 break
