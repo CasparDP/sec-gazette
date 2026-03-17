@@ -57,7 +57,7 @@ list(icon = "shield-exclamation", color = "primary", value = n_actions)
 #| content: valuebox
 #| title: "Digests Parsed"
 n_parsed <- tbl(con, "parsing_results") |>
-  filter(parsing_status == "completed") |>
+  filter(parsing_status %in% c("completed", "skipped")) |>
   count() |> pull(n)
 list(icon = "file-earmark-text", color = "success", value = n_parsed)
 ```
@@ -344,30 +344,43 @@ list(icon = "exclamation-triangle", color = if (n_failed > 0) "danger" else "suc
 
 ```{r coverage-heatmap}
 #| title: "Files on Disk by Year"
-# "completed" + "skipped" = file available locally.
-# "failed" = 404 (weekend/holiday — SEC did not publish a digest that day, expected ~30%).
+# on_disk   = completed + skipped (file present locally)
+# attempted = on_disk + failed (dates the scraper actually tried; excludes pending)
+# coverage  = on_disk / attempted  (~70% is the realistic ceiling: ~30% of dates are
+#             weekends/holidays where SEC never published, so those will always 404)
 coverage <- tbl(con, "download_manifest") |>
   count(year, download_status) |>
   collect() |>
   group_by(year) |>
-  mutate(
-    on_disk = sum(n[download_status %in% c("completed", "skipped")]),
-    total   = sum(n),
-    coverage_pct = on_disk / total
-  ) |>
-  slice(1) |>  # one row per year
-  ungroup()
+  summarise(
+    on_disk   = sum(n[download_status %in% c("completed", "skipped")]),
+    failed    = sum(n[download_status == "failed"]),
+    pending   = sum(n[download_status == "pending"]),
+    attempted = on_disk + failed,
+    coverage_pct = if_else(attempted > 0, on_disk / attempted, NA_real_),
+    .groups = "drop"
+  )
 
-p <- ggplot(coverage, aes(x = year, y = coverage_pct,
-                           text = paste0(year, ": ", percent(coverage_pct, accuracy = 1),
-                                         " (", on_disk, " files on disk / ", total, " dates attempted)"))) +
-  geom_col(aes(fill = coverage_pct), width = 0.8) +
-  scale_fill_gradient(low = "#ffc107", high = "#198754",
-                      labels = percent_format(), name = "On disk") +
+p <- ggplot(coverage, aes(
+    x    = year,
+    y    = coalesce(coverage_pct, 0),
+    text = paste0(
+      year, ": ",
+      if_else(!is.na(coverage_pct), percent(coverage_pct, accuracy = 1), "not downloaded"),
+      "\n", on_disk, " files on disk / ", attempted, " dates tried",
+      if_else(pending > 0, paste0("\n(", pending, " pending)"), "")
+    )
+  )) +
+  geom_col(aes(fill = coverage_pct), width = 0.8, na.rm = FALSE) +
+  # grey out years not yet downloaded
+  geom_col(data = filter(coverage, is.na(coverage_pct)),
+           aes(x = year, y = 0.05), fill = "#dee2e6", width = 0.8) +
+  scale_fill_gradient(low = "#ffc107", high = "#198754", na.value = "#dee2e6",
+                      labels = percent_format(), name = "On disk\n(of tried)") +
   scale_x_continuous(breaks = seq(1956, 2014, 5)) +
-  scale_y_continuous(labels = percent_format()) +
-  labs(x = "Year", y = "Files on disk / dates attempted",
-       caption = "~30% of dates are weekends/holidays with no digest published (expected 404s)") +
+  scale_y_continuous(labels = percent_format(), limits = c(0, 1)) +
+  labs(x = "Year", y = "Files on disk / dates tried",
+       caption = "Denominator = dates actually attempted (excludes pending). ~30% of dates are weekends/holidays (expected 404s), so ~70% is the realistic ceiling.") +
   theme_minimal(base_size = 12) +
   theme(axis.text.x = element_text(angle = 45, hjust = 1),
         legend.position = "right")
@@ -386,21 +399,36 @@ parse_by_year <- tbl(con, "parsing_results") |>
   filter(!is.na(year)) |>
   count(year, parsing_status) |>
   collect() |>
+  mutate(year = as.integer(year)) |>
   group_by(year) |>
   mutate(total = sum(n), pct = n / total) |>
-  filter(parsing_status == "completed")
+  filter(parsing_status %in% c("completed", "skipped")) |>
+  ungroup() |>
+  arrange(year)
 
-p <- ggplot(parse_by_year, aes(x = year, y = pct,
-                                text = paste0(year, ": ", percent(pct, accuracy = 1)))) +
-  geom_line(color = "#0d6efd", linewidth = 0.8) +
-  geom_point(color = "#0d6efd", size = 2) +
-  scale_x_continuous(breaks = seq(1956, 2014, 5)) +
-  scale_y_continuous(labels = percent_format(), limits = c(0, 1)) +
-  labs(x = "Year", y = "Parse success rate") +
-  theme_minimal(base_size = 12) +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+if (nrow(parse_by_year) > 0) {
+  p <- ggplot(parse_by_year, aes(x = year, y = pct,
+                                  text = paste0(year, ": ", percent(pct, accuracy = 1)))) +
+    geom_line(color = "#0d6efd", linewidth = 0.8) +
+    geom_point(color = "#0d6efd", size = 2) +
+    scale_x_continuous(breaks = seq(1956, 2014, 5)) +
+    scale_y_continuous(labels = percent_format(), limits = c(0, 1)) +
+    labs(x = "Year", y = "Parse success rate") +
+    theme_minimal(base_size = 12) +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
-ggplotly(p, tooltip = "text")
+  ggplotly(p, tooltip = "text")
+} else {
+  plotly_empty() |>
+    layout(
+      title = list(text = "No parsing data yet", x = 0.5),
+      annotations = list(
+        text = "Run script 02 to parse downloaded digest files.",
+        xref = "paper", yref = "paper", x = 0.5, y = 0.5,
+        showarrow = FALSE, font = list(size = 14)
+      )
+    )
+}
 ```
 
 ```{r cleanup}

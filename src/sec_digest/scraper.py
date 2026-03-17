@@ -91,7 +91,8 @@ class SECDigestScraper:
 
         while current_date <= end_date:
             # Format by era:
-            # - pre-2003: digMMDDYY.pdf in /news/digest/YYYY/
+            # - pre-2002 and Jan 2002: digMMDDYY.pdf in /news/digest/YYYY/
+            # - Feb-Dec 2002: MM-DD.txt in /news/digest/ (no year folder, no "dig" prefix)
             # - 2003-2006: digMMDDYY.txt in /news/digest/
             # - 2007+: digMMDDYY.htm in /news/digest/YYYY/
             month = current_date.strftime("%m")
@@ -100,18 +101,21 @@ class SECDigestScraper:
 
             if year >= 2007:
                 extension = "htm"
+                filename = f"dig{month}{day}{year_2digit}.{extension}"
+                url = f"{self.BASE_URL}/{year}/{filename}"
             elif year >= 2003:
                 extension = "txt"
-            else:
-                extension = "pdf"
-
-            filename = f"dig{month}{day}{year_2digit}.{extension}"
-
-            if 2003 <= year <= 2006:
-                # 2003-2006 TXT digests are served directly under /news/digest/
+                filename = f"dig{month}{day}{year_2digit}.{extension}"
+                url = f"{self.BASE_URL}/{filename}"
+            elif year == 2002 and current_date.month >= 2:
+                # Feb-Dec 2002: MM-DD.txt at root (no year folder, no "dig" prefix)
+                extension = "txt"
+                filename = f"{month}-{day}.txt"
                 url = f"{self.BASE_URL}/{filename}"
             else:
-                # PDF (pre-2003) and HTM (2007+) are served under year folders
+                # Jan 2002 and pre-2002: digMMDDYY.pdf under year folder
+                extension = "pdf"
+                filename = f"dig{month}{day}{year_2digit}.{extension}"
                 url = f"{self.BASE_URL}/{year}/{filename}"
 
             # Create local path: data/raw/YYYY/digest_YYYY-MM-DD.(pdf|txt|htm)
@@ -176,8 +180,14 @@ class SECDigestScraper:
         root_txt = f"{self.BASE_URL}/{stem}.txt"
         root_htm = f"{self.BASE_URL}/{stem}.htm"
 
-        if manifest.year <= 2002:
-            candidates = [year_pdf]
+        if manifest.year == 2002 and dt.month >= 2:
+            # Feb-Dec 2002: MM-DD.txt at root (no year folder, no "dig" prefix)
+            mm_dd_txt = f"{self.BASE_URL}/{dt.strftime('%m')}-{dt.strftime('%d')}.txt"
+            candidates = [mm_dd_txt]
+        elif manifest.year <= 2002:
+            # Jan 2002 and pre-2002: PDF under year folder
+            root_pdf = f"{self.BASE_URL}/{stem}.pdf"
+            candidates = [year_pdf, root_pdf]
         elif 2003 <= manifest.year <= 2006:
             candidates = [root_txt, year_txt, year_htm, root_htm]
         elif manifest.year == 2007:
