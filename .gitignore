@@ -187,3 +187,6 @@ temp/
 # Exclude paper files
 /paper/
 /paper/references.bib
+
+# Exclude config.yaml
+config.yaml

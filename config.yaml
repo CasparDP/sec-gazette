@@ -11,7 +11,7 @@ scraper:
   end_year: 2013 # Same as start_year for testing
 
 paths:
-  raw_data: "data/raw"
-  markdown: "data/markdown"
-  extracted: "data/extracted"
-  database: "data/processed/sec_digest.duckdb"
+  raw_data: "/Users/casparm4/Nextcloud/Shared/sec-gazette/data/gazette/raw"
+  markdown: "/Users/casparm4/Nextcloud/Shared/sec-gazette/data/gazette/markdown"
+  extracted: "/Users/casparm4/Nextcloud/Shared/sec-gazette/data/gazette/extracted"
+  database: "/Users/casparm4/Nextcloud/Shared/sec-gazette/data/gazette/sec_digest.duckdb"
